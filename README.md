@@ -46,9 +46,13 @@ previsore update                                  # scarica/aggiorna i dati (CC0
 previsore fit                                     # addestra e salva il modello (~6s)
 previsore predict --home Spain --away France --neutral
 previsore predict --home Spain --away France --neutral --scorers   # + marcatori probabili
-previsore predict --upcoming --limit 8            # prossime fixture del Mondiale
-previsore backtest --cutoff 2024-01-01            # validazione temporale
+previsore predict --upcoming --limit 8            # solo fixture da oggi in poi
+previsore backtest --cutoff 2024-01-01            # validazione temporale generale
+previsore evaluate --scorers                      # predizioni vs partite GIA giocate (Mondiale 2026)
 ```
+
+`evaluate` riaddestra solo su dati precedenti al torneo (niente leakage) e
+confronta le predizioni con i risultati reali gia disputati.
 
 Esempio output:
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+import pandas as pd
+
 from . import data as datamod
 from .model import DixonColes
 
@@ -68,8 +70,17 @@ def main(argv=None) -> int:
     pp.add_argument("--limit", type=int, default=20)
     pp.add_argument("--refit", action="store_true", help="riaddestra anche se esiste un modello salvato")
 
+    pp.add_argument("--all", action="store_true", help="con --upcoming: mostra anche date passate")
+
     pb = sub.add_parser("backtest", help="backtest temporale (RPS, 1X2, esatto)")
     pb.add_argument("--cutoff", default="2024-01-01")
+
+    pe = sub.add_parser("evaluate", help="confronta predizioni vs partite GIA giocate (out-of-sample)")
+    pe.add_argument("--cutoff", default="2026-06-11", help="addestra solo su dati prima di questa data")
+    pe.add_argument("--tournament", default="FIFA World Cup")
+    pe.add_argument("--since", default=None, help="valuta partite dal (default = cutoff)")
+    pe.add_argument("--scorers", action="store_true", help="valuta anche i marcatori")
+    pe.add_argument("--examples", type=int, default=12)
 
     args = ap.parse_args(argv)
 
@@ -92,6 +103,9 @@ def main(argv=None) -> int:
         goals = datamod.load_goalscorers() if args.scorers else None
         if args.upcoming:
             fut = datamod.future(df).sort_values("date")
+            if not args.all:
+                today = pd.Timestamp.today().normalize()
+                fut = fut[fut["date"] >= today]   # solo fixture davvero future
             shown = 0
             for r in fut.itertuples(index=False):
                 if r.home_team not in m.attack or r.away_team not in m.attack:
@@ -126,6 +140,29 @@ def main(argv=None) -> int:
         print(f"  RPS         DC={res['rps_dc']:.4f}   Elo={res['rps_elo']:.4f}   (piu basso = meglio; bookie ~0.20)")
         print(f"  Acc 1X2     DC={res['acc1x2_dc'] * 100:.1f}%   Elo={res['acc1x2_elo'] * 100:.1f}%")
         print(f"  Esatto      DC={res['exact_dc'] * 100:.1f}%   (tetto reale ~9-15%)")
+        return 0
+
+    if args.cmd == "evaluate":
+        from . import evaluate
+        goals = datamod.load_goalscorers() if args.scorers else None
+        res = evaluate.run(df, cutoff=args.cutoff, tournament=args.tournament,
+                           since=args.since, goals=goals)
+        if res["n"] == 0:
+            print("Nessuna partita giocata da valutare nel periodo/torneo scelto.")
+            return 0
+        since = args.since or args.cutoff
+        print(f"VALIDAZIONE '{args.tournament}' dal {since} - {res['n']} partite giocate "
+              f"(addestrato solo su dati < {args.cutoff}, niente leakage)")
+        print(f"  Esito 1X2 azzeccato : DC {res['out'] * 100:.1f}%   | Elo {res['out_elo'] * 100:.1f}%")
+        print(f"  Risultato esatto    : DC {res['exact'] * 100:.1f}%")
+        print(f"  RPS (piu basso meglio): DC {res['rps']:.4f}  | Elo {res['rps_elo']:.4f}")
+        if "sc_n" in res:
+            print(f"  Marcatori ({res['sc_n']} squadre-partita): top-1 {res['sc_t1'] * 100:.1f}%  "
+                  f"top-3 {res['sc_t3'] * 100:.1f}%")
+        if args.examples:
+            print("\n  data        predetto -> reale            esito esatto")
+            for dte, pred, real, o, e in res["examples"][:args.examples]:
+                print(f"  {dte}  {pred:<28} {real:<6} {'OK' if o else '. '}    {'OK' if e else '.'}")
         return 0
 
     return 0
