@@ -68,22 +68,29 @@ def _meter(ph, pd_, pa, width=VAL):
     return ink("█" * nh) + faint("▒" * nd) + faint("░" * na)
 
 
+_COLW = 32   # larghezza VISIBILE del blocco di sinistra (i codici colore non contano)
+
+
 def _scorer_cols(home_team, sh, away_team, sa):
-    left_w = 34
-    lines = [INSET + faint(f"scorers · {home_team.lower()}".ljust(left_w))
-             + faint(f"scorers · {away_team.lower()}")]
+    hl = f"scorers · {home_team.lower()}"
+    hr = f"scorers · {away_team.lower()}"
+    lines = [INSET + faint(hl) + " " * max(2, _COLW - len(hl)) + faint(hr)]
     for i in range(max(len(sh), len(sa))):
-        left = _scorer_cell(sh[i]) if i < len(sh) else ""
-        right = _scorer_cell(sa[i]) if i < len(sa) else ""
-        lines.append(INSET + "  " + left.ljust(left_w - 2) + right)
+        lp, lr = _scorer_cell(sh[i]) if i < len(sh) else ("", "")
+        rp, rr = _scorer_cell(sa[i]) if i < len(sa) else ("", "")
+        lp, lr = "  " + lp, "  " + lr        # rientro dei giocatori
+        lines.append(INSET + lr + " " * max(2, _COLW - len(lp)) + rr)
     return lines
 
 
 def _scorer_cell(item):
+    """Ritorna (plain, rendered): il plain serve a calcolare il padding visibile."""
     name, p, is_pk = item
-    tag = faint(" (p)") if is_pk else "    "
+    tag = " (p)" if is_pk else "    "
     pct = _fig(f"{round(p * 100)}%", 4)
-    return f"{ink(name[:16].ljust(16))}{tag} {ink(pct)}"
+    plain = f"{name[:16].ljust(16)}{tag} {pct}"
+    rendered = ink(name[:16].ljust(16)) + faint(tag) + " " + ink(pct)
+    return plain, rendered
 
 
 def render_terminal(pred: dict, scorers_home=None, scorers_away=None, meta=None) -> str:
