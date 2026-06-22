@@ -37,17 +37,30 @@ def fetch_squads(verbose: bool = True) -> pd.DataFrame:
             if header is None:
                 continue
             ths = [th.get_text(strip=True) for th in header.find_all(["th", "td"])]
-            pidx = next((i for i, c in enumerate(ths) if "Player" in c), None)
+
+            def _idx(label):
+                return next((i for i, c in enumerate(ths) if label in c), None)
+
+            pidx = _idx("Player")
             if pidx is None:
                 continue
+            posi, capi, goali = _idx("Pos"), _idx("Caps"), _idx("Goals")
             for tr in el.find_all("tr")[1:]:
                 cells = tr.find_all(["td", "th"])
                 if len(cells) <= pidx:
                     continue
-                name = re.sub(r"\(.*?\)", "", cells[pidx].get_text(" ", strip=True)).strip()
+
+                def _cell(i):
+                    return cells[i].get_text(" ", strip=True) if (i is not None and i < len(cells)) else ""
+
+                def _num(i):
+                    t = re.sub(r"[^0-9]", "", _cell(i))
+                    return int(t) if t else 0
+
+                name = re.sub(r"\(.*?\)", "", _cell(pidx)).strip()
                 if name:
-                    rows.append((team, name))
-    df = pd.DataFrame(rows, columns=["team", "player"]).drop_duplicates()
+                    rows.append((team, name, _cell(posi), _num(capi), _num(goali)))
+    df = pd.DataFrame(rows, columns=["team", "player", "pos", "caps", "goals"]).drop_duplicates()
     if verbose:
         print(f"rose: {df['team'].nunique()} nazionali, {len(df)} giocatori")
     return df

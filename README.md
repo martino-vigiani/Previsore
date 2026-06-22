@@ -74,14 +74,23 @@ Output (`minimal-swiss`, monocromo, NO_COLOR-safe):
                   █████████████████████▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░░░░░░
 
   expected goals  1.76  ·  1.22
-  scoreline       1–1                            modal · 11.4%
+  likely score    1–1                            ~11% · 1 su 9
 
   also            2–1    9.6   1–0    8.4
 
+  goals o/u 2.5   over 51%  ·  under 49%
+  both score      yes 58%  ·  no 42%
+  double chance   1X 78%   12 73%   X2 50%
+  clean sheet     spain 30%   germany 22%
+
   scorers · spain                   scorers · germany
-    Mikel Oyarzabal  (p)  32%       Kai Havertz      (p)  21%
-    Mikel Merino          26%       Deniz Undav           15%
+    Mikel Oyarzabal  (p)  28%       Kai Havertz      (p)  19%
 ```
+
+Il punteggio è etichettato `likely score ~11% · 1 su 9`: è il singolo esito più
+probabile, non una certezza (il calcio è troppo vario perché lo sia). I **mercati
+derivati** (O/U, BTTS, doppia chance, clean sheet) vengono dalla stessa matrice,
+gratis, e sono ben calibrati.
 
 `evaluate`/`walkforward` riaddestrano solo su dati precedenti (niente leakage).
 
@@ -157,6 +166,12 @@ tra i giocatori per quota storica di gol (pesata per recency), poi
 - Nomi marcatori normalizzati per accenti (`Álvarez`/`Alvarez` deduplicati).
 - Output `minimal-swiss` monocromo + export `--card` SVG; `walkforward`/`evaluate`
   con log-loss/Brier/ECE + CI bootstrap; test (`tests/`).
+- **Marcatori calibrati**: quote per giocatore senza rinormalizzare sui superstiti
+  del gate (la massa non attribuita = profondità rosa) → massa totale 71 vs 72 reali
+  su WC2026, ECE 1.2% (prima la fascia 20-35% era gonfiata 2×).
+- **Mercati derivati** (O/U 2.5, BTTS, doppia chance, clean sheet) dalla matrice.
+- Punteggio riformulato come "1 su N" (non più falsa certezza); griglia adattiva
+  + clip λ per i blowout; accenti canonicalizzati; rose con Caps/Goals.
 
 ## Limiti noti / prossimi passi
 

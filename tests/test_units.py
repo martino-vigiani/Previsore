@@ -54,6 +54,39 @@ def test_lookup_market_neutral_orientation_and_bad_csv():
     assert odds.lookup_market(pd.DataFrame({"foo": [1]}), "Spain", "Iran") is None
 
 
+def test_predict_markets_and_blowout_clip():
+    from previsore.model import DixonColes
+    m = DixonColes(teams=["A", "B"], attack={"A": 0.3, "B": -0.3},
+                   defence={"A": 0.2, "B": -0.2}, gamma=0.25, rho=-0.05)
+    pred = m.predict("A", "B", neutral=True)
+    mk = pred["markets"]
+    assert abs(mk["over25"] + mk["under25"] - 1.0) < 1e-9
+    assert 0.0 <= mk["btts"] <= 1.0
+    assert abs(pred["p_home"] + pred["p_draw"] + pred["p_away"] - 1.0) < 1e-6
+    # blowout: lambda enorme deve essere clippato a 12, niente crash, prob finite
+    big = DixonColes(teams=["A", "B"], attack={"A": 5.0, "B": -5.0},
+                     defence={"A": 5.0, "B": -5.0}, gamma=0.3, rho=0.0)
+    lam, mu = big.rates("A", "B", neutral=True)
+    assert lam <= 12.0 and mu <= 12.0
+    pb = big.predict("A", "B", neutral=True)
+    assert pb["p_home"] > 0.9 and 0.0 < pb["exact_prob"] <= 1.0
+
+
+def test_player_shares_no_renormalize_and_cap():
+    import pandas as pd
+    from previsore import scorers
+    goals = pd.DataFrame({
+        "date": pd.to_datetime(["2025-09-01", "2025-09-01", "2025-06-01", "2022-06-01"]),
+        "team": ["T"] * 4, "home_team": ["T"] * 4, "away_team": ["X"] * 4,
+        "scorer": ["P1", "P1", "P2", "P3"],
+        "own_goal": [False] * 4, "penalty": [False] * 4,
+    })
+    sh = scorers.player_shares(goals, "T", "2025-10-01")
+    assert "P3" not in sh                       # inattivo (>30 mesi) -> gated
+    assert sum(sh.values()) < 1.0               # massa NON rinormalizzata (residuo = P3)
+    assert all(v <= 0.5 + 1e-9 for v in sh.values())   # cap rispettato
+
+
 def test_svg_escapes_hostile_names():
     import xml.dom.minidom as M
     from previsore.render import render_card_svg

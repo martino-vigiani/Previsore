@@ -38,7 +38,7 @@ def run(df: pd.DataFrame, cutoff: str, tournament: str = "FIFA World Cup",
     tmap = squads.tokens_by_team() if goals is not None else {}
 
     P_dc, P_bl, P_el, Y = [], [], [], []
-    examples, sc_rows = [], []
+    examples, sc_rows, cal_rows = [], [], []
     for r in test.itertuples(index=False):
         if r.home_team not in model.attack or r.away_team not in model.attack:
             continue
@@ -61,13 +61,17 @@ def run(df: pd.DataFrame, cutoff: str, tournament: str = "FIFA World Cup",
             for team, lam in ((r.home_team, pred["lambda_home"]), (r.away_team, pred["lambda_away"])):
                 # stesso percorso di `predict`: scorer_probs con gate rosa, confronto normalizzato
                 toks = squads.squad_tokens_for(team, tmap)
-                top = scorers.scorer_probs(goals, team, model.ref_date, lam, squad_tokens=toks, topn=3)
-                top_norm = {scorers._norm_name(p) for p, _, _ in top}
-                top1 = scorers._norm_name(top[0][0]) if top else None
+                allp = scorers.scorer_probs(goals, team, model.ref_date, lam, squad_tokens=toks, topn=25)
                 real = {scorers._norm_name(s) for s in
                         actual[(actual["team"] == team) & (~actual["own_goal"])]["scorer"].dropna()}
+                top3 = allp[:3]
+                top_norm = {scorers._norm_name(p) for p, _, _ in top3}
+                top1 = scorers._norm_name(top3[0][0]) if top3 else None
                 if real:
                     sc_rows.append({"t1": int(top1 in real), "t3": int(bool(top_norm & real))})
+                # calibrazione: TUTTI i candidati, anche quando la squadra non segna (hit=0)
+                for name, pp, _ in allp:
+                    cal_rows.append((pp, int(scorers._norm_name(name) in real)))
 
     P_dc, P_bl, P_el, Y = map(np.array, (P_dc, P_bl, P_el, Y))
     res = {"n": int(len(Y)), "examples": examples}
@@ -99,4 +103,17 @@ def run(df: pd.DataFrame, cutoff: str, tournament: str = "FIFA World Cup",
     s = pd.DataFrame(sc_rows)
     if len(s):
         res.update({"sc_n": int(len(s)), "sc_t1": float(s["t1"].mean()), "sc_t3": float(s["t3"].mean())})
+    if cal_rows:
+        cp = np.array([p for p, _ in cal_rows])
+        ch = np.array([h for _, h in cal_rows])
+        bands = []
+        ece = 0.0
+        for lo, hi in ((0, .1), (.1, .2), (.2, .35), (.35, .6), (.6, 1.01)):
+            mb = (cp >= lo) & (cp < hi)
+            if mb.sum():
+                pred_m, real_m = float(cp[mb].mean()), float(ch[mb].mean())
+                bands.append((lo, hi, pred_m, real_m, int(mb.sum())))
+                ece += (mb.sum() / len(cp)) * abs(pred_m - real_m)
+        res["sc_cal"] = {"brier": float(((cp - ch) ** 2).mean()), "ece": ece / 1.0,
+                         "mass_pred": float(cp.sum()), "mass_real": int(ch.sum()), "bands": bands}
     return res

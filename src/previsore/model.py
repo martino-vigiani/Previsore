@@ -158,10 +158,14 @@ class DixonColes:
         hf = 0.0 if neutral else 1.0
         lam = math.exp(self.attack[home] - self.defence[away] + self.gamma * hf)
         mu = math.exp(self.attack[away] - self.defence[home])
-        return lam, mu
+        # cap per evitare lambda assurdi (es. vs minnow) che la griglia troncherebbe
+        return min(lam, 12.0), min(mu, 12.0)
 
-    def score_matrix(self, home: str, away: str, neutral: bool = False, maxgoals: int = 10):
+    def score_matrix(self, home: str, away: str, neutral: bool = False, maxgoals: int | None = None):
         lam, mu = self.rates(home, away, neutral)
+        if maxgoals is None:  # griglia adattiva: copre la coda anche per punteggi alti
+            top = max(lam, mu)
+            maxgoals = int(max(10, min(40, math.ceil(top + 6 * math.sqrt(top)))))
         lf = _logfact(maxgoals)[:maxgoals + 1]
         ks = np.arange(maxgoals + 1)
         ph = np.exp(-lam + ks * math.log(lam) - lf)
@@ -176,7 +180,7 @@ class DixonColes:
         return M, lam, mu
 
     def predict(self, home: str, away: str, neutral: bool = False,
-                maxgoals: int = 10, topn: int = 5) -> dict:
+                maxgoals: int | None = None, topn: int = 5) -> dict:
         M, lam, mu = self.score_matrix(home, away, neutral, maxgoals)
         p_home = float(np.tril(M, -1).sum())   # casa > ospite
         p_draw = float(np.trace(M))
@@ -185,12 +189,25 @@ class DixonColes:
         xy = np.dstack(np.unravel_index(order, M.shape))[0]
         top = [((int(x), int(y)), float(M[x, y])) for x, y in xy[:topn]]
         bx, by = top[0][0]
+        # mercati derivati (gratis, dalla stessa matrice)
+        gx = np.arange(M.shape[0])
+        totals = np.add.outer(gx, gx)
+        over25 = float(M[totals >= 3].sum())
+        btts = float(M[1:, 1:].sum())          # entrambe segnano
+        markets = {
+            "over25": over25, "under25": 1.0 - over25,
+            "btts": btts, "btts_no": 1.0 - btts,
+            "clean_home": float(M[:, 0].sum()),   # ospite non segna
+            "clean_away": float(M[0, :].sum()),   # casa non segna
+            "dc_1x": p_home + p_draw, "dc_12": p_home + p_away, "dc_x2": p_draw + p_away,
+            "exp_total": lam + mu,
+        }
         return {
             "home": home, "away": away, "neutral": neutral,
             "lambda_home": lam, "lambda_away": mu,
             "exact": (bx, by), "exact_prob": top[0][1],
             "p_home": p_home, "p_draw": p_draw, "p_away": p_away,
-            "top_scores": top,
+            "top_scores": top, "markets": markets,
         }
 
     # ---------------------------------------------------------- persistence

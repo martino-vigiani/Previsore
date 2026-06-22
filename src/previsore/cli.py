@@ -222,6 +222,13 @@ def main(argv=None) -> int:
               f"{'  (non significativo a questo n)' if ci[0] < 0 < ci[1] else '  (significativo)'}")
         if "sc_n" in res:
             print(f"  Marcatori ({res['sc_n']}): top-1 {res['sc_t1']*100:.1f}%  top-3 {res['sc_t3']*100:.1f}%")
+        if "sc_cal" in res:
+            c = res["sc_cal"]
+            print(f"  Calibrazione marcatori: Brier {c['brier']:.4f}  ECE {c['ece']*100:.1f}%  "
+                  f"(massa predetta {c['mass_pred']:.0f} vs reale {c['mass_real']})")
+            for lo, hi, pm, rm, n in c["bands"]:
+                flag = "  <-- gonfiato" if pm - rm > 0.06 else ""
+                print(f"    {int(lo*100):2}-{int(hi*100):3}%: predetto {pm*100:4.1f}%  reale {rm*100:4.1f}%  (n={n}){flag}")
         if args.examples:
             print("\n  data        predetto -> reale            esito esatto")
             for dte, pr, real, o, e in res["examples"][:args.examples]:

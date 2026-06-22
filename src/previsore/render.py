@@ -111,12 +111,14 @@ def render_terminal(pred: dict, scorers_home=None, scorers_away=None, meta=None)
     # gol attesi + scoreline
     L.append(_row("expected goals", ink(f"{pred['lambda_home']:.2f}") + faint("  ·  ") + ink(f"{pred['lambda_away']:.2f}")))
     sline_plain = f"{x}–{y}"
-    modal_plain = f"modal · {pred['exact_prob'] * 100:.1f}%"
-    modal_render = faint("modal · ") + ink(f"{pred['exact_prob'] * 100:.1f}%")
-    lbl = "scoreline".ljust(LBL)
+    ep = pred["exact_prob"]
+    one_in = round(1 / ep) if ep > 0 else 0
+    modal_plain = f"~{ep * 100:.0f}% · 1 su {one_in}"
+    modal_render = faint("~") + ink(f"{ep * 100:.0f}%") + faint(f" · 1 su {one_in}")
+    lbl = "likely score".ljust(LBL)
     L.append(_flush(faint(lbl) + ink(sline_plain), lbl + sline_plain, modal_render, modal_plain))
     L.append("")
-    # also (top risultati 2..5)
+    # also (top risultati 2..5): la distribuzione, non un punto
     tops = pred["top_scores"][1:5]
     if tops:
         def cell(t):
@@ -124,9 +126,22 @@ def render_terminal(pred: dict, scorers_home=None, scorers_away=None, meta=None)
             return f"{ink(f'{a}–{b}')}   {ink(_fig(f'{p * 100:.1f}', 4))}"
         rowpairs = [tops[i:i + 2] for i in range(0, len(tops), 2)]
         for j, rp in enumerate(rowpairs):
-            lbl = "also" if j == 0 else ""
+            rl = "also" if j == 0 else ""
             seg = ("   ".join(cell(t) for t in rp))
-            L.append(_row(lbl, seg))
+            L.append(_row(rl, seg))
+        L.append("")
+    # mercati derivati (dalla matrice, gratis)
+    m = pred.get("markets")
+    if m:
+        L.append(_row("goals o/u 2.5", ink(f"over {m['over25'] * 100:.0f}%") + faint("  ·  ")
+                      + ink(f"under {m['under25'] * 100:.0f}%")))
+        L.append(_row("both score", ink(f"yes {m['btts'] * 100:.0f}%") + faint("  ·  ")
+                      + ink(f"no {m['btts_no'] * 100:.0f}%")))
+        L.append(_row("double chance", faint("1X ") + ink(f"{m['dc_1x'] * 100:.0f}%")
+                      + faint("   12 ") + ink(f"{m['dc_12'] * 100:.0f}%")
+                      + faint("   X2 ") + ink(f"{m['dc_x2'] * 100:.0f}%")))
+        L.append(_row("clean sheet", faint(f"{home.lower()} ") + ink(f"{m['clean_home'] * 100:.0f}%")
+                      + faint(f"   {away.lower()} ") + ink(f"{m['clean_away'] * 100:.0f}%")))
         L.append("")
     # marcatori
     if scorers_home or scorers_away:
