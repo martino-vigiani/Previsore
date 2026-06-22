@@ -19,23 +19,25 @@ import requests
 from scipy.optimize import brentq
 
 from .data import DATA_DIR
+from .scorers import _norm_name
 
 API_URL = "https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds"
 ODDS_CSV = DATA_DIR / "odds.csv"
+_COLS = ("home_team", "away_team", "odds_home", "odds_draw", "odds_away")
 
-# nomi feed quote -> nomi martj42
+# grafie feed quote -> forma canonica normalizzata (minuscolo, senza accenti)
 _ALIAS = {
-    "usa": "United States", "united states of america": "United States",
-    "korea republic": "South Korea", "south korea": "South Korea",
-    "korea dpr": "North Korea", "ir iran": "Iran", "iran": "Iran",
-    "china pr": "China", "ivory coast": "Ivory Coast", "cote d'ivoire": "Ivory Coast",
-    "czechia": "Czech Republic", "cape verde islands": "Cape Verde",
-    "turkiye": "Turkey", "türkiye": "Turkey",
+    "usa": "united states", "united states of america": "united states",
+    "korea republic": "south korea", "korea dpr": "north korea",
+    "ir iran": "iran", "china pr": "china", "cote d'ivoire": "ivory coast",
+    "czechia": "czech republic", "cape verde islands": "cape verde",
+    "turkiye": "turkey",
 }
 
 
 def _norm(s: str) -> str:
-    return _ALIAS.get(str(s).strip().lower(), str(s).strip())
+    n = _norm_name(s)             # NFKD: minuscolo + senza accenti
+    return _ALIAS.get(n, n)
 
 
 # --------------------------------------------------------------- Shin de-vig
@@ -123,11 +125,19 @@ def get_odds_table(refresh: bool = True, verbose: bool = True) -> pd.DataFrame |
 
 
 def lookup_market(table: pd.DataFrame | None, home: str, away: str) -> list | None:
-    """Prob. di mercato de-viggate per la partita, o None se assente."""
-    if table is None or len(table) == 0:
+    """Prob. di mercato de-viggate per la partita, o None se assente.
+
+    Tollera un CSV senza le colonne attese (degrada a None) e gestisce
+    l'orientamento casa/trasferta arbitrario delle partite a campo neutro.
+    """
+    if table is None or len(table) == 0 or not all(c in table.columns for c in _COLS):
         return None
     h, a = _norm(home), _norm(away)
     for r in table.itertuples(index=False):
-        if _norm(r.home_team) == h and _norm(r.away_team) == a:
+        rh, ra = _norm(r.home_team), _norm(r.away_team)
+        if rh == h and ra == a:
             return shin_devig([r.odds_home, r.odds_draw, r.odds_away])
+        if rh == a and ra == h:                      # feed con squadre invertite (campo neutro)
+            p = shin_devig([r.odds_home, r.odds_draw, r.odds_away])
+            return [p[2], p[1], p[0]] if p else None
     return None

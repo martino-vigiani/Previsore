@@ -39,11 +39,13 @@ def penalty_fraction(goals, team, ref_date, years: int = 4) -> float:
     return float(min(g["penalty"].mean(), 0.25))
 
 
-def penalty_taker(goals, team, ref_date, years: int = 4, squad_tokens=None):
-    g = _recent(goals, team, pd.Timestamp(ref_date), years)
+def penalty_taker(goals, team, ref_date, years: int = 4, gate_months: int = 30, squad_tokens=None):
+    ref = pd.Timestamp(ref_date)
+    g = _recent(goals, team, ref, years)
     if g.empty or "penalty" not in g.columns:
         return None
-    pk = g[g["penalty"]]
+    # stesso gate attivita di player_shares: niente rigoristi non piu attivi
+    pk = g[g["penalty"] & (g["date"] >= ref - pd.DateOffset(months=gate_months))]
     if pk.empty:
         return None
     taker = pk["scorer"].value_counts().idxmax()
@@ -83,22 +85,21 @@ def player_shares(goals, team, ref_date, half_life_days: float = 730.0,
     return (s / s.sum()).to_dict()
 
 
-def predict_scorers(team_lambda: float, shares: dict, topn: int = 5):
-    """Compat: lista (giocatore, prob_marcatore, gol_attesi) senza rigorista."""
-    out = [(p, 1.0 - math.exp(-team_lambda * sh), team_lambda * sh) for p, sh in shares.items()]
-    out.sort(key=lambda t: t[1], reverse=True)
-    return out[:topn]
-
-
 def scorer_probs(goals, team, ref_date, team_lambda: float, squad_tokens=None, topn: int = 4):
     """Lista (giocatore, prob_marcatore, e_rigorista) con quota gioco aperto +
-    massa rigori instradata al rigorista."""
-    pf = penalty_fraction(goals, team, ref_date)
-    open_sh = player_shares(goals, team, ref_date, squad_tokens=squad_tokens, include_penalties=False)
+    massa rigori instradata al rigorista attivo. Conserva i gol attesi totali:
+    senza un rigorista valido la frazione rigori rientra nel gioco aperto."""
     taker = penalty_taker(goals, team, ref_date, squad_tokens=squad_tokens)
+    pf = penalty_fraction(goals, team, ref_date) if taker else 0.0
+    # se nessun rigorista valido: includi i rigori nel calcolo generale (no mass loss)
+    open_sh = player_shares(goals, team, ref_date, squad_tokens=squad_tokens,
+                            include_penalties=(taker is None))
     lam = {p: sh * (1.0 - pf) * team_lambda for p, sh in open_sh.items()}
     if taker and pf > 0:
-        lam[taker] = lam.get(taker, 0.0) + pf * team_lambda
-    out = [(p, 1.0 - math.exp(-l), p == taker) for p, l in lam.items()]
+        norm_map = {_norm_name(p): p for p in lam}     # accoppia per nome normalizzato
+        key = norm_map.get(_norm_name(taker), taker)
+        lam[key] = lam.get(key, 0.0) + pf * team_lambda
+    tk = _norm_name(taker) if taker else None
+    out = [(p, 1.0 - math.exp(-l), _norm_name(p) == tk) for p, l in lam.items()]
     out.sort(key=lambda t: t[1], reverse=True)
     return out[:topn]

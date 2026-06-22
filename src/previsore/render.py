@@ -6,6 +6,7 @@ Niente dipendenze (ANSI SGR grezzo + f-string). Rispetta NO_COLOR e i pipe
 """
 from __future__ import annotations
 
+import html
 import os
 import sys
 
@@ -15,7 +16,14 @@ LBL = 16               # colonna etichette
 VAL = W - LBL          # 44
 FIG = " "         # figure space (larghezza cifra)
 
-PLAIN = (not sys.stdout.isatty()) or bool(os.environ.get("NO_COLOR"))
+def _isatty() -> bool:
+    try:
+        return sys.stdout.isatty()
+    except Exception:                # stdout sostituito da un writer minimale
+        return False
+
+
+PLAIN = (not _isatty()) or bool(os.environ.get("NO_COLOR"))
 
 
 def _sgr(s, code):
@@ -146,7 +154,11 @@ def render_terminal(pred: dict, scorers_home=None, scorers_away=None, meta=None)
 # ----------------------------------------------------------------- card SVG
 def render_card_svg(pred: dict, scorers_home=None, scorers_away=None, meta=None) -> str:
     meta = meta or {}
-    home, away = pred["home"].upper(), pred["away"].upper()
+    esc = html.escape                                  # XML-safe & < > " '
+    home, away = esc(pred["home"].upper()), esc(pred["away"].upper())
+    tour = esc(str(meta.get("tournament", "FIFA WORLD CUP 2026")))
+    prov_model = esc(str(meta.get("prov", {}).get("model", "Dixon–Coles + Elo")))
+    prov_fit = esc(str(meta.get("prov", {}).get("fit", "")))
     ph, pd_, pa = pred["p_home"], pred["p_draw"], pred["p_away"]
     x, y = pred["exact"]
     W_, H_ = 1080, 1350
@@ -161,7 +173,7 @@ def render_card_svg(pred: dict, scorers_home=None, scorers_away=None, meta=None)
         for i, (name, p, pk) in enumerate(sc[:4]):
             yy = y0 + i * 46
             mark = " (p)" if pk else ""
-            out.append(f'<text x="{x0}" y="{yy}" font-size="30" fill="{INK}">{name[:18]}{mark}</text>')
+            out.append(f'<text x="{x0}" y="{yy}" font-size="30" fill="{INK}">{html.escape(name[:18])}{mark}</text>')
             out.append(f'<text x="{x0 + 300}" y="{yy}" font-size="30" fill="{MUT}" text-anchor="end">{round(p*100)}%</text>')
         return "\n".join(out)
 
@@ -169,7 +181,7 @@ def render_card_svg(pred: dict, scorers_home=None, scorers_away=None, meta=None)
 <rect width="{W_}" height="{H_}" fill="{PAP}"/>
 <line x1="{ax}" y1="80" x2="{W_-ax}" y2="80" stroke="{INK}" stroke-width="2"/>
 <text x="{ax}" y="180" font-size="64" font-weight="600" fill="{INK}">{home} · {away}</text>
-<text x="{ax}" y="226" font-size="26" fill="{MUT}" letter-spacing="3">{meta.get('tournament','FIFA WORLD CUP 2026')} · {'NEUTRAL · ' if pred['neutral'] else ''}{meta.get('date','')}</text>
+<text x="{ax}" y="226" font-size="26" fill="{MUT}" letter-spacing="3">{tour} · {'NEUTRAL · ' if pred['neutral'] else ''}{esc(str(meta.get('date','')))}</text>
 <text x="{ax}" y="380" font-size="22" fill="{MUT}">1</text>
 <text x="{ax + bar_w/2:.0f}" y="380" font-size="22" fill="{MUT}" text-anchor="middle">X</text>
 <text x="{W_-ax}" y="380" font-size="22" fill="{MUT}" text-anchor="end">2</text>
@@ -188,6 +200,6 @@ def render_card_svg(pred: dict, scorers_home=None, scorers_away=None, meta=None)
 {scorer_rows(scorers_home or [], ax, 870)}
 {scorer_rows(scorers_away or [], ax+460, 870)}
 <line x1="{ax}" y1="1180" x2="{W_-ax}" y2="1180" stroke="{MUT}" stroke-width="1"/>
-<text x="{ax}" y="1230" font-size="22" fill="{MUT}">{meta.get('prov',{}).get('model','Dixon–Coles + Elo')}</text>
-<text x="{ax}" y="1262" font-size="22" fill="{MUT}">{meta.get('prov',{}).get('fit','')}</text>
+<text x="{ax}" y="1230" font-size="22" fill="{MUT}">{prov_model}</text>
+<text x="{ax}" y="1262" font-size="22" fill="{MUT}">{prov_fit}</text>
 </svg>'''

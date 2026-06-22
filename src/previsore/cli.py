@@ -6,7 +6,6 @@ Default (niente chiave quote, niente cache rose) = identico a prima e offline.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 
 import pandas as pd
@@ -31,11 +30,12 @@ def _load_predictor(played, cfg, use_odds=False, refit=False, **kw) -> blend.Pre
         m.to_json(MODEL_PATH)
     R = blend.elo_ratings(played)
     market_w, odds_table = 0.0, None
-    if use_odds or os.environ.get("PREVISORE_ODDS_API_KEY"):
+    if use_odds:                              # solo con --odds, non dal solo env
         from . import odds
         odds_table = odds.get_odds_table()
         if odds_table is not None:
-            market_w = cfg.get("market_w") or 0.5
+            mw = cfg.get("market_w")          # rispetta uno 0.0 esplicito; assente -> 0.5
+            market_w = mw if mw is not None else 0.5
     return blend.Predictor(m, R, w=cfg.get("ensemble_w", 1.0), T=cfg.get("temperature", 1.0),
                            market_w=market_w, odds_table=odds_table)
 
@@ -142,7 +142,7 @@ def main(argv=None) -> int:
                       min_matches=args.min_matches, reg=args.reg)
         m = DixonColes.fit(pl, **fit_kw)
         m.to_json(MODEL_PATH)
-        cfg = {"ensemble_w": 1.0, "temperature": 1.0, "market_w": 0.0, **fit_kw}
+        cfg = {"ensemble_w": 1.0, "temperature": 1.0, **fit_kw}
         if not args.no_tune:
             print(f"taro il blend (val dal {args.tune_cutoff})...")
             tuned = blend.tune(pl, val_cutoff=args.tune_cutoff, **fit_kw)
@@ -162,6 +162,9 @@ def main(argv=None) -> int:
             from . import squads
             tmap = squads.tokens_by_team()
         if args.upcoming:
+            if args.card:
+                print("nota: --card vale solo per una partita singola, ignorato con --upcoming",
+                      file=sys.stderr)
             fut = datamod.future(df).sort_values("date")
             if not args.all:
                 fut = fut[fut["date"] >= pd.Timestamp.today().normalize()]

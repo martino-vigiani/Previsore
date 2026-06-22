@@ -69,21 +69,25 @@ def load_squads() -> pd.DataFrame | None:
 
 
 def tokens_by_team(df: pd.DataFrame | None = None) -> dict:
-    """{nome_nazionale_normalizzato -> set di token cognome} per il gate marcatori."""
+    """{nome_nazionale_martj42_normalizzato -> set di token cognome}.
+
+    Le chiavi sono gia normalizzate verso la grafia martj42 (via _ALIAS sul nome
+    Wikipedia), cosi il lookup da cli usa direttamente il nome martj42.
+    """
     if df is None:
         df = load_squads()
     if df is None or len(df) == 0:
         return {}
-    out = {}
+    out: dict = {}
     for team, grp in df.groupby("team"):
-        toks = set()
+        wiki_key = _norm_name(team)
+        key = _ALIAS.get(wiki_key, wiki_key)   # heading Wikipedia -> nome martj42
+        toks = out.setdefault(key, set())
         for p in grp["player"]:
             toks |= _tokens(p)
-        out[_norm_name(team)] = toks
     return out
 
 
 def squad_tokens_for(team: str, tmap: dict):
-    """Token-rosa per una nazionale martj42, gestendo gli alias. None se assente."""
-    key = _norm_name(team)
-    return tmap.get(key) or tmap.get(_ALIAS.get(key, key))
+    """Token-rosa per una nazionale martj42 (chiavi gia canonicalizzate). None se assente."""
+    return tmap.get(_norm_name(team))

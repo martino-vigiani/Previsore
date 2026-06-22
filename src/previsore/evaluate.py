@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from . import blend, elo, metrics, scorers
+from . import blend, elo, metrics, scorers, squads
 from .model import DixonColes
 
 
@@ -35,6 +35,7 @@ def run(df: pd.DataFrame, cutoff: str, tournament: str = "FIFA World Cup",
     model = DixonColes.fit(train, ref_date=cut, **fit_kw)
     R = blend.elo_ratings(train)
     pred_engine = blend.Predictor(model, R, w=w, T=T)
+    tmap = squads.tokens_by_team() if goals is not None else {}
 
     P_dc, P_bl, P_el, Y = [], [], [], []
     examples, sc_rows = [], []
@@ -58,13 +59,15 @@ def run(df: pd.DataFrame, cutoff: str, tournament: str = "FIFA World Cup",
             actual = goals[(goals["date"] == r.date) & (goals["home_team"] == r.home_team)
                            & (goals["away_team"] == r.away_team)]
             for team, lam in ((r.home_team, pred["lambda_home"]), (r.away_team, pred["lambda_away"])):
-                sh = scorers.player_shares(goals, team, model.ref_date)
-                top = scorers.predict_scorers(lam, sh, topn=3)
-                top3 = {t[0] for t in top}
-                top1 = top[0][0] if top else None
-                real = set(actual[(actual["team"] == team) & (~actual["own_goal"])]["scorer"].dropna())
+                # stesso percorso di `predict`: scorer_probs con gate rosa, confronto normalizzato
+                toks = squads.squad_tokens_for(team, tmap)
+                top = scorers.scorer_probs(goals, team, model.ref_date, lam, squad_tokens=toks, topn=3)
+                top_norm = {scorers._norm_name(p) for p, _, _ in top}
+                top1 = scorers._norm_name(top[0][0]) if top else None
+                real = {scorers._norm_name(s) for s in
+                        actual[(actual["team"] == team) & (~actual["own_goal"])]["scorer"].dropna()}
                 if real:
-                    sc_rows.append({"t1": int(top1 in real), "t3": int(bool(top3 & real))})
+                    sc_rows.append({"t1": int(top1 in real), "t3": int(bool(top_norm & real))})
 
     P_dc, P_bl, P_el, Y = map(np.array, (P_dc, P_bl, P_el, Y))
     res = {"n": int(len(Y)), "examples": examples}
