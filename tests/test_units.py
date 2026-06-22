@@ -87,6 +87,26 @@ def test_player_shares_no_renormalize_and_cap():
     assert all(v <= 0.5 + 1e-9 for v in sh.values())   # cap rispettato
 
 
+def test_confederation_map_and_effect():
+    from previsore import confed
+    from previsore.model import DixonColes
+    assert confed.conf_of("Brazil") == "CONMEBOL"
+    assert confed.conf_of("Germany") == "UEFA"
+    assert confed.conf_of("New Zealand") == "OFC"
+    assert confed.conf_of("Nowhereland") is None
+    # l'offset di confederazione sposta lambda nelle partite cross-confederation
+    m = DixonColes(teams=["Brazil", "New Zealand"],
+                   attack={"Brazil": 0.0, "New Zealand": 0.0},
+                   defence={"Brazil": 0.0, "New Zealand": 0.0}, gamma=0.0, rho=0.0,
+                   conf={"CONMEBOL": 0.7, "OFC": -0.9, "UEFA": 0.0, "CONCACAF": 0.0,
+                         "CAF": 0.0, "AFC": 0.0})
+    lam, mu = m.rates("Brazil", "New Zealand", neutral=True)
+    assert lam > mu                  # confederazione forte segna di piu
+    # entro la stessa confederazione l'effetto si annulla
+    lam2, mu2 = m.rates("Brazil", "Brazil", neutral=True)
+    assert abs(lam2 - mu2) < 1e-9
+
+
 def test_svg_escapes_hostile_names():
     import xml.dom.minidom as M
     from previsore.render import render_card_svg

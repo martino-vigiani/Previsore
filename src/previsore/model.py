@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
+from . import confed
+
 
 def _importance(tournament: str) -> float:
     """Peso partita: le amichevoli pesano meno dei tornei veri."""
@@ -64,6 +66,7 @@ class DixonColes:
     defence: dict = field(default_factory=dict)
     gamma: float = 0.0      # vantaggio campo (scala log)
     rho: float = 0.0        # correzione Dixon-Coles
+    conf: dict = field(default_factory=dict)   # offset forza per confederazione
     half_life_days: float = 730.0
     window_years: int = 12
     min_matches: int = 25
@@ -99,33 +102,47 @@ class DixonColes:
         ag = df["away_score"].to_numpy()
         home_flag = (~df["neutral"].to_numpy().astype(bool)).astype(float)
 
+        # indice confederazione per squadra (6 = sconosciuta -> effetto 0)
+        NC = len(confed.CONFEDERATIONS)
+        cmap = {c: i for i, c in enumerate(confed.CONFEDERATIONS)}
+        team_conf = {t: cmap.get(confed.conf_of(t), NC) for t in teams}
+        ch = np.array([team_conf[t] for t in df["home_team"]])
+        ca = np.array([team_conf[t] for t in df["away_team"]])
+
         age_days = (ref - df["date"]).dt.days.to_numpy().astype(float)
         xi = math.log(2) / half_life_days
         w = np.exp(-xi * age_days) * df["tournament"].map(_importance).to_numpy()
 
-        # pacchetto parametri: attacco[0..N-2] liberi (attacco[N-1] = -somma),
-        # difesa[0..N-1], gamma, rho
+        # parametri: attacco[0..N-2] liberi (attacco[N-1] = -somma), difesa[0..N-1],
+        # gamma, rho, confederazione[0..NC-2] liberi (conf[NC-1] = -somma)
         def unpack(p):
             atk = np.empty(N)
             atk[:N - 1] = p[:N - 1]
             atk[N - 1] = -p[:N - 1].sum()
             dfc = p[N - 1:2 * N - 1]
-            return atk, dfc, p[2 * N - 1], p[2 * N]
+            gamma, rho = p[2 * N - 1], p[2 * N]
+            cf = np.empty(NC)
+            cf[:NC - 1] = p[2 * N + 1:2 * N + NC]
+            cf[NC - 1] = -p[2 * N + 1:2 * N + NC].sum()
+            cf_full = np.append(cf, 0.0)        # indice NC = sconosciuta -> 0
+            return atk, dfc, gamma, rho, cf, cf_full
 
         def nll(p):
-            atk, dfc, gamma, rho = unpack(p)
-            lam = np.clip(np.exp(atk[h] - dfc[a] + gamma * home_flag), 1e-8, 50.0)
-            mu = np.clip(np.exp(atk[a] - dfc[h]), 1e-8, 50.0)
+            atk, dfc, gamma, rho, cf, cf_full = unpack(p)
+            conf_term = cf_full[ch] - cf_full[ca]   # 0 entro la stessa confederazione
+            lam = np.clip(np.exp(atk[h] - dfc[a] + gamma * home_flag + conf_term), 1e-8, 50.0)
+            mu = np.clip(np.exp(atk[a] - dfc[h] - conf_term), 1e-8, 50.0)
             tau = np.clip(_dc_tau(hg, ag, lam, mu, rho), 1e-10, None)
             ll = w * (hg * np.log(lam) - lam + ag * np.log(mu) - mu + np.log(tau))
             # ridge (L2): pooling parziale verso la media, modella anche le minnow
-            penalty = reg * (np.sum(atk ** 2) + np.sum((dfc - dfc.mean()) ** 2))
+            penalty = reg * (np.sum(atk ** 2) + np.sum((dfc - dfc.mean()) ** 2) + np.sum(cf ** 2))
             return -ll.sum() + penalty
 
-        x0 = np.zeros(2 * N + 1)
+        x0 = np.zeros(2 * N + NC)
         x0[2 * N - 1] = 0.25   # gamma iniziale
         x0[2 * N] = -0.05      # rho iniziale
-        bounds = [(-3, 3)] * (N - 1) + [(-3, 3)] * N + [(-0.5, 1.5), (-0.2, 0.2)]
+        bounds = ([(-3, 3)] * (N - 1) + [(-3, 3)] * N + [(-0.5, 1.5), (-0.2, 0.2)]
+                  + [(-2, 2)] * (NC - 1))
 
         t0 = time.time()
         # La verosimiglianza e quasi piatta vicino all'ottimo (molte squadre con
@@ -134,7 +151,7 @@ class DixonColes:
         res = minimize(nll, x0, method="L-BFGS-B", bounds=bounds,
                        options={"maxiter": maxiter, "maxfun": maxiter * 60,
                                 "ftol": 1e-8, "gtol": 1e-6})
-        atk, dfc, gamma, rho = unpack(res.x)
+        atk, dfc, gamma, rho, cf, _ = unpack(res.x)
         if verbose:
             print(f"fit: {len(df)} partite, {N} squadre, nll={res.fun:.1f}, "
                   f"gamma={gamma:.3f}, rho={rho:.3f}, iter={res.nit}, {time.time() - t0:.1f}s")
@@ -144,6 +161,7 @@ class DixonColes:
             attack={t: float(atk[i]) for t, i in idx.items()},
             defence={t: float(dfc[i]) for t, i in idx.items()},
             gamma=float(gamma), rho=float(rho),
+            conf={confed.CONFEDERATIONS[i]: float(cf[i]) for i in range(NC)},
             half_life_days=half_life_days, window_years=window_years,
             min_matches=min_matches, ref_date=str(ref.date()),
         )
@@ -156,8 +174,9 @@ class DixonColes:
                     f"Squadra '{t}' assente dal modello (servono >= {self.min_matches} "
                     f"partite negli ultimi {self.window_years} anni).")
         hf = 0.0 if neutral else 1.0
-        lam = math.exp(self.attack[home] - self.defence[away] + self.gamma * hf)
-        mu = math.exp(self.attack[away] - self.defence[home])
+        ct = self.conf.get(confed.conf_of(home), 0.0) - self.conf.get(confed.conf_of(away), 0.0)
+        lam = math.exp(self.attack[home] - self.defence[away] + self.gamma * hf + ct)
+        mu = math.exp(self.attack[away] - self.defence[home] - ct)
         # cap per evitare lambda assurdi (es. vs minnow) che la griglia troncherebbe
         return min(lam, 12.0), min(mu, 12.0)
 
@@ -215,7 +234,8 @@ class DixonColes:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(json.dumps({
             "teams": self.teams, "attack": self.attack, "defence": self.defence,
-            "gamma": self.gamma, "rho": self.rho, "half_life_days": self.half_life_days,
+            "gamma": self.gamma, "rho": self.rho, "conf": self.conf,
+            "half_life_days": self.half_life_days,
             "window_years": self.window_years, "min_matches": self.min_matches,
             "ref_date": self.ref_date,
         }))

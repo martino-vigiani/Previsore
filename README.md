@@ -110,11 +110,13 @@ Esempio output:
 
 | Metrica            | **Blend** | Dixon-Coles | Elo    |
 |--------------------|-----------|-------------|--------|
-| Accuratezza 1X2    | **60.1%** | 59.9%       | 58.5%  |
-| RPS (↓ meglio)     | **0.169** | 0.170       | 0.175  |
-| log-loss (↓)       | **0.867** | 0.871       | 0.898  |
-| Brier (↓)          | **0.510** | 0.512       | 0.530  |
-| ECE calibrazione (↓)| **1.72%**| 2.35%       | 6.21%  |
+| Accuratezza 1X2    | **60.4%** | 60.3%       | 58.5%  |
+| RPS (↓ meglio)     | **0.167** | 0.167       | 0.175  |
+| log-loss (↓)       | **0.859** | 0.862       | 0.898  |
+| Brier (↓)          | **0.505** | 0.507       | 0.530  |
+| ECE calibrazione (↓)| **1.86%**| 2.24%       | 6.21%  |
+
+(con effetti di confederazione: vs senza, log-loss 0.867 → 0.859, RPS 0.169 → 0.167.)
 
 CI95 log-loss (blend − Elo) = **[−0.035, −0.026]**, interamente sotto zero → il blend
 è **significativamente** meglio. ECE 1.72% < 5% = ben calibrato (riferimento Hicruben
@@ -172,6 +174,9 @@ tra i giocatori per quota storica di gol (pesata per recency), poi
 - **Mercati derivati** (O/U 2.5, BTTS, doppia chance, clean sheet) dalla matrice.
 - Punteggio riformulato come "1 su N" (non più falsa certezza); griglia adattiva
   + clip λ per i blowout; accenti canonicalizzati; rose con Caps/Goals.
+- **Effetti di confederazione** (UEFA/CONMEBOL/CONCACAF/CAF/AFC/OFC): offset di
+  forza stimato dalle partite cross-confederation (tutte quelle del Mondiale lo sono).
+  Offset sensati (CONMEBOL +0.73, UEFA +0.51, OFC −0.93) e log-loss 0.867 → 0.859.
 
 ## Limiti noti / prossimi passi
 
