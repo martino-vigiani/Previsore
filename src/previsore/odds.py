@@ -23,6 +23,21 @@ from .scorers import _norm_name
 
 API_URL = "https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds"
 ODDS_CSV = DATA_DIR / "odds.csv"
+ENV_FILE = DATA_DIR.parent / ".env"
+
+
+def _ensure_env() -> None:
+    """Carica la chiave da .env (root progetto) se non gia nell'ambiente. No dep."""
+    if os.environ.get("PREVISORE_ODDS_API_KEY") or not ENV_FILE.exists():
+        return
+    for line in ENV_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        v = v.strip().strip('"').strip("'")
+        if v:
+            os.environ.setdefault(k.strip(), v)
 _COLS = ("home_team", "away_team", "odds_home", "odds_draw", "odds_away")
 
 # grafie feed quote -> forma canonica normalizzata (minuscolo, senza accenti)
@@ -77,6 +92,7 @@ def overround(odds) -> float:
 
 # ------------------------------------------------------------- sorgente quote
 def fetch_odds(regions: str = "eu", verbose: bool = True) -> list[dict]:
+    _ensure_env()
     key = os.environ.get("PREVISORE_ODDS_API_KEY")
     if not key:
         return []
@@ -109,6 +125,7 @@ def fetch_odds(regions: str = "eu", verbose: bool = True) -> list[dict]:
 
 def get_odds_table(refresh: bool = True, verbose: bool = True) -> pd.DataFrame | None:
     """Tabella quote secondo la catena di fallback. None se non disponibili."""
+    _ensure_env()
     if refresh and os.environ.get("PREVISORE_ODDS_API_KEY"):
         try:
             rows = fetch_odds(verbose=verbose)

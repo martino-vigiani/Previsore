@@ -183,10 +183,23 @@ tra i giocatori per quota storica di gol (pesata per recency), poi
 - **Peso mercato** non tarabile su storico (non esistono quote internazionali storiche
   gratis): default fisso `w=0.5`, da rivedere se si fornisce un CSV storico.
 - Marcatore esatto resta ≈ fortuna; il gate rosa è a livello di convocati, non di XI.
-- **Confederation fixed-effects** (partite WC cross-confederation): ~0.003 RPS, da fare.
 - Layer LLM per aggiustamenti last-minute + spiegazione: non ancora presente.
+
+## Disclaimer
+
+Strumento a **scopo educativo e di intrattenimento**. **Non** è un consiglio di
+scommessa né una garanzia di risultato: il calcio è ad alta varianza e il risultato
+esatto si azzecca circa 1 volta su 7 anche coi modelli migliori. Le previsioni sono
+distribuzioni di probabilità, non certezze. Se giochi, fallo responsabilmente e a tuo
+rischio. Gli autori non sono responsabili di perdite derivanti dall'uso del software.
 
 ## Dati & licenza
 
-Dati: [martj42/international_results](https://github.com/martj42/international_results) (CC0).
-Codice: vedi repo.
+- Codice: **MIT** (vedi [LICENSE](LICENSE)).
+- Risultati/marcatori: [martj42/international_results](https://github.com/martj42/international_results) — CC0.
+- Calendario/sedi: [openfootball](https://github.com/openfootball) — CC0.
+- Rose 2026: Wikipedia — **CC-BY-SA** (attribuzione dovuta; scaricate con User-Agent
+  descrittivo e cache, senza martellare il sito).
+- Quote (opzionale): [the-odds-api](https://the-odds-api.com) con chiave propria.
+
+Le quote/rose sono **opt-in**; di default l'app usa solo dati CC0 e gira offline.
