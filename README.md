@@ -1,9 +1,11 @@
 # Previsore
 
-Predittore **risultato esatto + 1X2** per partite di calcio internazionali
-(Mondiale 2026 e oltre). **Ensemble** Dixon-Coles (Poisson bivariata) + Elo, con
-ridge-shrinkage e calibrazione a temperatura. Tutto su **CPU**, dati **CC0**, gira
-**offline** dopo il primo download. Nessuna API key.
+Predittore **risultato esatto + 1X2 + marcatori** per partite di calcio
+internazionali (Mondiale 2026 e oltre). **Ensemble** Dixon-Coles (Poisson bivariata)
++ Elo, con ridge-shrinkage e calibrazione a temperatura, e **ancoraggio opzionale al
+mercato** (quote bookmaker, Shin de-vig). Output `minimal-swiss` monocromo + card SVG
+condivisibile. Tutto su **CPU**, dati **CC0**; **offline di default** (quote e rose
+reali sono opt-in). Nessuna API key richiesta per il funzionamento base.
 
 > Onestà: il calcio è basso punteggio e ad alta varianza. Il risultato esatto si
 > azzecca **~1 volta su 8** anche coi modelli migliori. L'output va letto come
@@ -46,17 +48,42 @@ pip install -e .
 ```bash
 previsore update                                  # scarica/aggiorna i dati (CC0)
 previsore fit                                     # addestra + tara il blend (~17s)
-previsore predict --home Spain --away France --neutral
-previsore predict --home Spain --away France --neutral --scorers   # + marcatori probabili
-previsore predict --upcoming --limit 8            # solo fixture da oggi in poi
-previsore evaluate --scorers                      # predizioni vs partite GIA giocate (Mondiale 2026)
-previsore walkforward                             # validazione onesta su ~7800 partite (refit annuale)
-previsore backtest --cutoff 2024-01-01            # backtest split singolo (rapido)
+previsore squads                                  # (opt-in) rose 26 reali da Wikipedia
+previsore odds                                    # (opt-in) quote, serve PREVISORE_ODDS_API_KEY
+previsore predict --home Spain --away Germany --neutral --scorers
+previsore predict --home Spain --away Germany --neutral --odds      # ancora al mercato
+previsore predict --home Spain --away Germany --neutral --scorers --card card.svg
+previsore predict --upcoming --limit 8 --scorers  # solo fixture da oggi in poi
+previsore evaluate --scorers                       # predizioni vs partite GIA giocate
+previsore walkforward                              # validazione onesta su ~7800 partite
+previsore backtest --cutoff 2024-01-01             # backtest split singolo (rapido)
 ```
 
-`evaluate` e `walkforward` riaddestrano solo su dati precedenti (niente leakage):
-`evaluate` confronta col Mondiale 2026 reale (diagnostico, n piccolo), `walkforward`
-dà i numeri statisticamente validi su tutto il backbone post-2018.
+Output (`minimal-swiss`, monocromo, NO_COLOR-safe):
+
+```
+  ────────────────────────────────────────────────────────────
+
+  SPAIN  ·  GERMANY                      neutral · group stage
+  FIFA World Cup 2026                            blend + market
+
+  ────────────────────────────────────────────────────────────
+
+  the line               1             X              2
+                       48.5%         26.9%          24.6%
+                  █████████████████████▒▒▒▒▒▒▒▒▒▒▒▒░░░░░░░░░░░
+
+  expected goals  1.76  ·  1.22
+  scoreline       1–1                            modal · 11.4%
+
+  also            2–1    9.6   1–0    8.4
+
+  scorers · spain                   scorers · germany
+    Mikel Oyarzabal  (p)  32%       Kai Havertz      (p)  21%
+    Mikel Merino          26%       Deniz Undav           15%
+```
+
+`evaluate`/`walkforward` riaddestrano solo su dati precedenti (niente leakage).
 
 Esempio output:
 
@@ -118,25 +145,25 @@ tra i giocatori per quota storica di gol (pesata per recency), poi
   marcatori ospite (France): Kylian Mbappé 31%, Randal Kolo Muani 8%, Adrien Rabiot 7%, ...
 ```
 
-## Già implementato (giro migliorie)
+## Già implementato
 
-- Ensemble DC + Elo sul 1X2, peso tarato out-of-sample (significativo: CI sotto zero).
-- Half-life ~3 anni (evidenza Ley 2019) + ridge-shrinkage → modella anche le minnow
-  (squadre 217 → 234) invece di scartarle.
+- Ensemble DC + Elo sul 1X2, peso tarato out-of-sample (CI sotto zero = significativo).
+- Half-life ~3 anni + ridge-shrinkage → modella anche le minnow (217 → 234 squadre).
 - Temperature scaling → ECE 6.2% (Elo) → 1.7% (blend).
-- `walkforward` con log-loss/Brier/RPS/ECE + CI bootstrap; `evaluate` confronta col reale.
-- Gate marcatori: scarta chi non segna da >30 mesi (proxy offline anti-ritirati) → top-3 +6pp.
-- Test anti-leakage (`tests/test_no_leakage.py`).
+- **Ancoraggio al mercato** (`--odds`): Shin de-vig delle quote + pool lineare; opt-in
+  via `PREVISORE_ODDS_API_KEY` o `data/odds.csv`, fallback model-only.
+- **Gate rosa-26 reale** (`previsore squads`, Wikipedia) + **rigorista** instradato:
+  marcatori dalla rosa convocata, non più dai ritirati.
+- Nomi marcatori normalizzati per accenti (`Álvarez`/`Alvarez` deduplicati).
+- Output `minimal-swiss` monocromo + export `--card` SVG; `walkforward`/`evaluate`
+  con log-loss/Brier/ECE + CI bootstrap; test (`tests/`).
 
 ## Limiti noti / prossimi passi
 
-- **Marcatori** = stima a livello di *rosa attiva*, non di XI confermato. Salto di
-  qualità: gate sulla rosa 26 reale (Wikipedia/FIFA) + rigorista. Il marcatore esatto resta ≈ fortuna.
-- Nomi marcatori non normalizzati per accenti (`Julián Álvarez` vs `Alvarez`).
-- **Confederation fixed-effects** (tutte le partite WC sono cross-confederation):
-  migliora ~0.003 RPS, da fare (LATER nel piano).
-- **Blend con quote bookmaker** (Shin de-vig): leva esterna più forte, ma rompe la
-  proprietà offline/CC0 → opt-in con fallback `w=1`.
+- **Peso mercato** non tarabile su storico (non esistono quote internazionali storiche
+  gratis): default fisso `w=0.5`, da rivedere se si fornisce un CSV storico.
+- Marcatore esatto resta ≈ fortuna; il gate rosa è a livello di convocati, non di XI.
+- **Confederation fixed-effects** (partite WC cross-confederation): ~0.003 RPS, da fare.
 - Layer LLM per aggiustamenti last-minute + spiegazione: non ancora presente.
 
 ## Dati & licenza

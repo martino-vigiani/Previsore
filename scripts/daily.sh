@@ -8,5 +8,7 @@ source .venv/bin/activate
 
 echo "=== $(date) ==="
 previsore update                 # pull dati CC0 (martj42)
+previsore squads || true         # rose 26 reali (Wikipedia, opt-in; non bloccare se fallisce)
+previsore odds || true           # quote se PREVISORE_ODDS_API_KEY impostata
 previsore fit                    # riaddestra (secondi)
 previsore predict --upcoming --limit 32 --scorers   # previsioni + marcatori

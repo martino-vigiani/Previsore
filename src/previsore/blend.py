@@ -28,6 +28,15 @@ def blend_1x2(p_dc, p_elo, w: float, T: float) -> np.ndarray:
     return metrics.temperature(p, T)
 
 
+def market_blend(p_model, p_market, m: float) -> np.ndarray:
+    """Ancoraggio al mercato (pool lineare). m=0 o niente quote -> solo modello."""
+    p_model = np.asarray(p_model, dtype=float)
+    if p_market is None or m <= 0:
+        return p_model
+    p = (1.0 - m) * p_model + m * np.asarray(p_market, dtype=float)
+    return p / p.sum()
+
+
 def tune(played: pd.DataFrame, val_cutoff: str = "2023-01-01", **fit_kw) -> dict:
     """Sceglie (ensemble_w, temperature) minimizzando il log-loss su una finestra
     di validazione ampia (tutte le partite dal val_cutoff in poi)."""
@@ -61,13 +70,16 @@ def tune(played: pd.DataFrame, val_cutoff: str = "2023-01-01", **fit_kw) -> dict
 
 
 class Predictor:
-    """Avvolge il modello DC + rating Elo + config di blend."""
+    """Avvolge il modello DC + rating Elo + config di blend (+ mercato opzionale)."""
 
-    def __init__(self, dc: DixonColes, ratings: dict, w: float = 1.0, T: float = 1.0):
+    def __init__(self, dc: DixonColes, ratings: dict, w: float = 1.0, T: float = 1.0,
+                 market_w: float = 0.0, odds_table=None):
         self.dc = dc
         self.R = ratings
         self.w = w
         self.T = T
+        self.market_w = market_w
+        self.odds_table = odds_table
 
     def elo_1x2(self, home, away, neutral=False):
         rh = self.R.get(home, 1500.0)
@@ -79,8 +91,17 @@ class Predictor:
         p_dc = [pred["p_home"], pred["p_draw"], pred["p_away"]]
         p_el = self.elo_1x2(home, away, neutral)
         pb = blend_1x2(p_dc, p_el, self.w, self.T)
-        pred["p_home"], pred["p_draw"], pred["p_away"] = float(pb[0]), float(pb[1]), float(pb[2])
         pred["p_dc"] = p_dc          # 1X2 grezzo del solo DC (per confronto)
+        # ancoraggio al mercato (se quote disponibili per la partita)
+        p_mkt = None
+        if self.odds_table is not None and self.market_w > 0:
+            from . import odds
+            p_mkt = odds.lookup_market(self.odds_table, home, away)
+        pred["p_model"] = [float(x) for x in pb]
+        pred["p_market"] = p_mkt
+        if p_mkt is not None:
+            pb = market_blend(pb, p_mkt, self.market_w)
+        pred["p_home"], pred["p_draw"], pred["p_away"] = float(pb[0]), float(pb[1]), float(pb[2])
         return pred
 
 
