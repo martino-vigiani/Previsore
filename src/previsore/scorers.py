@@ -17,14 +17,25 @@ import pandas as pd
 
 
 def player_shares(goals: pd.DataFrame, team: str, ref_date,
-                  half_life_days: float = 1095.0, recency_years: int = 5) -> dict:
-    """Quota storica di gol per giocatore della nazionale `team` (somma = 1)."""
+                  half_life_days: float = 730.0, recency_years: int = 4,
+                  gate_months: int = 30) -> dict:
+    """Quota storica di gol per giocatore della nazionale `team` (somma = 1).
+
+    `gate_months`: scarta chi non segna per la nazionale da piu di tot mesi
+    (proxy offline per "non piu in rosa": rimuove i ritirati senza dati esterni).
+    """
     ref = pd.Timestamp(ref_date)
     cutoff = ref - pd.DateOffset(years=recency_years)
     g = goals[(goals["team"] == team) & (goals["date"] >= cutoff) & (goals["date"] <= ref)]
     if "own_goal" in g.columns:
         g = g[~g["own_goal"]]              # gli autogol non contano per il marcatore
-    g = g.dropna(subset=["scorer"])
+    g = g.dropna(subset=["scorer"]).copy()
+    if g.empty:
+        return {}
+    # gate: tieni solo chi ha segnato negli ultimi gate_months
+    gate = ref - pd.DateOffset(months=gate_months)
+    active = set(g[g["date"] >= gate]["scorer"].unique())
+    g = g[g["scorer"].isin(active)]
     if g.empty:
         return {}
     xi = math.log(2) / half_life_days

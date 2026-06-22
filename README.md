@@ -1,9 +1,9 @@
 # Previsore
 
 Predittore **risultato esatto + 1X2** per partite di calcio internazionali
-(Mondiale 2026 e oltre). Modello statistico calibrato **Dixon-Coles** (Poisson
-bivariata) con baseline **Elo**. Tutto su **CPU**, dati **CC0**, gira **offline**
-dopo il primo download. Nessuna API key.
+(Mondiale 2026 e oltre). **Ensemble** Dixon-Coles (Poisson bivariata) + Elo, con
+ridge-shrinkage e calibrazione a temperatura. Tutto su **CPU**, dati **CC0**, gira
+**offline** dopo il primo download. Nessuna API key.
 
 > Onestà: il calcio è basso punteggio e ad alta varianza. Il risultato esatto si
 > azzecca **~1 volta su 8** anche coi modelli migliori. L'output va letto come
@@ -16,15 +16,17 @@ dopo il primo download. Nessuna API key.
 [dati martj42/international_results, CC0]   ← una sola sorgente: storico + fixture future (score=NA)
         │
         ▼
-[feature: forza attacco/difesa per squadra, vantaggio campo, decadimento temporale, peso torneo]
+[feature: forza attacco/difesa per squadra, vantaggio campo, decadimento temporale (~3 anni), peso torneo]
         │
-        ▼
-[modello base Dixon-Coles]  →  matrice 11×11 delle probabilità di ogni risultato
-        │
-        ├─ risultato esatto più probabile  (argmax)
-        ├─ 1 / X / 2  (somma triangoli della matrice)
-        └─ top-N risultati con probabilità
+        ├─► [Dixon-Coles + ridge]  →  matrice 11×11 dei punteggi ──► risultato esatto + top-N + marcatori
+        │            │ 1X2
+        │            ▼
+        └─► [Elo]    [ ensemble  w·DC + (1−w)·Elo ]  ──► [temperature scaling] ──► 1X2 calibrato
 ```
+
+Pesi `w` (≈0.7) e temperatura `T` (≈0.85) tarati **out-of-sample** su ~3500 partite
+(2023→) per log-loss, mai sulle poche partite del Mondiale. Il risultato esatto e i
+marcatori restano dal Dixon-Coles; l'ensemble migliora solo le probabilità 1X2.
 
 Scelta deliberata (vedi feasibility): il modello base è statistico/calibrato, **non**
 un LLM che indovina i numeri (gli LLM sono mal-calibrati: in un test giugno 2026
@@ -43,16 +45,18 @@ pip install -e .
 
 ```bash
 previsore update                                  # scarica/aggiorna i dati (CC0)
-previsore fit                                     # addestra e salva il modello (~6s)
+previsore fit                                     # addestra + tara il blend (~17s)
 previsore predict --home Spain --away France --neutral
 previsore predict --home Spain --away France --neutral --scorers   # + marcatori probabili
 previsore predict --upcoming --limit 8            # solo fixture da oggi in poi
-previsore backtest --cutoff 2024-01-01            # validazione temporale generale
 previsore evaluate --scorers                      # predizioni vs partite GIA giocate (Mondiale 2026)
+previsore walkforward                             # validazione onesta su ~7800 partite (refit annuale)
+previsore backtest --cutoff 2024-01-01            # backtest split singolo (rapido)
 ```
 
-`evaluate` riaddestra solo su dati precedenti al torneo (niente leakage) e
-confronta le predizioni con i risultati reali gia disputati.
+`evaluate` e `walkforward` riaddestrano solo su dati precedenti (niente leakage):
+`evaluate` confronta col Mondiale 2026 reale (diagnostico, n piccolo), `walkforward`
+dà i numeri statisticamente validi su tutto il backbone post-2018.
 
 Esempio output:
 
@@ -64,17 +68,29 @@ Esempio output:
   top risultati: 1-1 13.6%, 1-0 11.6%, 0-0 9.9%, 0-1 8.9%, 2-1 8.6%
 ```
 
-## Backtest (numeri reali, fuori campione)
+## Validazione (numeri reali, fuori campione)
 
-Split temporale dal 2024-01-01, 2507 partite di test:
+**Walk-forward, refit annuale, 7875 partite internazionali (2018→2026):**
 
-| Metrica            | Dixon-Coles | Elo    | Riferimento        |
-|--------------------|-------------|--------|--------------------|
-| RPS (↓ meglio)     | **0.168**   | 0.173  | bookmaker ~0.20    |
-| Accuratezza 1X2    | **59.2%**   | 58.7%  | tetto ~52–58%      |
-| Risultato esatto   | **12.8%**   | —      | tetto reale ~9–15% |
+| Metrica            | **Blend** | Dixon-Coles | Elo    |
+|--------------------|-----------|-------------|--------|
+| Accuratezza 1X2    | **60.1%** | 59.9%       | 58.5%  |
+| RPS (↓ meglio)     | **0.169** | 0.170       | 0.175  |
+| log-loss (↓)       | **0.867** | 0.871       | 0.898  |
+| Brier (↓)          | **0.510** | 0.512       | 0.530  |
+| ECE calibrazione (↓)| **1.72%**| 2.35%       | 6.21%  |
 
-Il modello batte la baseline Elo su tutte le metriche e sta dentro i tetti teorici.
+CI95 log-loss (blend − Elo) = **[−0.035, −0.026]**, interamente sotto zero → il blend
+è **significativamente** meglio. ECE 1.72% < 5% = ben calibrato (riferimento Hicruben
+WC2026: RPS 0.175, log-loss 0.89, ECE 2.3% su 763 partite — qui su 10× più partite).
+
+**Diagnostico sul Mondiale 2026** (36 partite già giocate, `previsore evaluate`):
+Acc 1X2 63.9% (blend), risultato esatto ~11–14%, marcatori top-1 ~28%, top-3 ~57%.
+Il CI a n=36 è ampio: questo è un controllo, non una prova — la prova è il walk-forward.
+
+> Cosa NON è stato aggiunto e perché: forma recente, giorni di riposo, congestione
+> calendario. Una replica su ~8000 partite mostra che danno ~0 guadagno di RPS una
+> volta modellata la forza squadra. Meglio non aggiungere rumore.
 
 ## Autonomia (cron)
 
@@ -86,9 +102,10 @@ Il modello batte la baseline Elo su tutte le metriche e sta dentro i tetti teori
 
 ## Prestazioni su Apple Silicon (M5)
 
-Compute **non** è il collo di bottiglia: fit completo (~11k partite, ~217 squadre)
-in **~6 secondi su CPU**, niente GPU, RAM trascurabile. Il vero limite è la qualità
-dei dati (formazioni/infortuni last-minute), non la potenza di calcolo.
+Compute **non** è il collo di bottiglia: fit + taratura blend (~11k partite, ~234
+squadre) in **~17 secondi su CPU**; il walk-forward su 7875 partite (8 refit) in
+**~50 secondi**. Niente GPU, RAM trascurabile. Il vero limite è la qualità dei dati
+(formazioni/infortuni last-minute), non la potenza di calcolo.
 
 ## Marcatori (`--scorers`)
 
@@ -101,16 +118,25 @@ tra i giocatori per quota storica di gol (pesata per recency), poi
   marcatori ospite (France): Kylian Mbappé 31%, Randal Kolo Muani 8%, Adrien Rabiot 7%, ...
 ```
 
+## Già implementato (giro migliorie)
+
+- Ensemble DC + Elo sul 1X2, peso tarato out-of-sample (significativo: CI sotto zero).
+- Half-life ~3 anni (evidenza Ley 2019) + ridge-shrinkage → modella anche le minnow
+  (squadre 217 → 234) invece di scartarle.
+- Temperature scaling → ECE 6.2% (Elo) → 1.7% (blend).
+- `walkforward` con log-loss/Brier/RPS/ECE + CI bootstrap; `evaluate` confronta col reale.
+- Gate marcatori: scarta chi non segna da >30 mesi (proxy offline anti-ritirati) → top-3 +6pp.
+- Test anti-leakage (`tests/test_no_leakage.py`).
+
 ## Limiti noti / prossimi passi
 
-- **Marcatori** = stima a livello di *rosa recente*, non di XI confermato: senza la
-  formazione titolare (esce ~1h pre-partita) include potenziali ritirati. Per il salto
-  di qualità serve un feed formazioni (es. API-Football). Il marcatore esatto resta ≈ fortuna.
-- Nomi marcatori non normalizzati: la sorgente a volte duplica per accenti
-  (`Julián Álvarez` vs `Julián Alvarez`).
-- Backtest a split singolo (no walk-forward refit per partita): leggermente ottimista.
-- Niente quote bookmaker → nessun calcolo di *value bet*.
-- Normalizzazione nomi squadre minima (former_names non applicato).
+- **Marcatori** = stima a livello di *rosa attiva*, non di XI confermato. Salto di
+  qualità: gate sulla rosa 26 reale (Wikipedia/FIFA) + rigorista. Il marcatore esatto resta ≈ fortuna.
+- Nomi marcatori non normalizzati per accenti (`Julián Álvarez` vs `Alvarez`).
+- **Confederation fixed-effects** (tutte le partite WC sono cross-confederation):
+  migliora ~0.003 RPS, da fare (LATER nel piano).
+- **Blend con quote bookmaker** (Shin de-vig): leva esterna più forte, ma rompe la
+  proprietà offline/CC0 → opt-in con fallback `w=1`.
 - Layer LLM per aggiustamenti last-minute + spiegazione: non ancora presente.
 
 ## Dati & licenza

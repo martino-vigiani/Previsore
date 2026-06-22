@@ -71,9 +71,9 @@ class DixonColes:
 
     # ------------------------------------------------------------------ fit
     @classmethod
-    def fit(cls, played: pd.DataFrame, ref_date=None, half_life_days: float = 730.0,
-            window_years: int = 12, min_matches: int = 25, maxiter: int = 300,
-            verbose: bool = True) -> "DixonColes":
+    def fit(cls, played: pd.DataFrame, ref_date=None, half_life_days: float = 1095.0,
+            window_years: int = 12, min_matches: int = 15, reg: float = 1.0,
+            maxiter: int = 300, verbose: bool = True) -> "DixonColes":
         df = played.dropna(subset=["home_score", "away_score"]).copy()
         df["home_score"] = df["home_score"].astype(int)
         df["away_score"] = df["away_score"].astype(int)
@@ -118,7 +118,9 @@ class DixonColes:
             mu = np.clip(np.exp(atk[a] - dfc[h]), 1e-8, 50.0)
             tau = np.clip(_dc_tau(hg, ag, lam, mu, rho), 1e-10, None)
             ll = w * (hg * np.log(lam) - lam + ag * np.log(mu) - mu + np.log(tau))
-            return -ll.sum()
+            # ridge (L2): pooling parziale verso la media, modella anche le minnow
+            penalty = reg * (np.sum(atk ** 2) + np.sum((dfc - dfc.mean()) ** 2))
+            return -ll.sum() + penalty
 
         x0 = np.zeros(2 * N + 1)
         x0[2 * N - 1] = 0.25   # gamma iniziale
