@@ -149,6 +149,68 @@ last-minute inputs (lineups, injuries) and for writing the human-readable summar
 
 ---
 
+## Technical terms explained
+
+The names that show up in the code and the table below — what each one actually
+means, in one or two sentences.
+
+**The models**
+
+- **Poisson distribution** — the standard way to model "how many times does a rare
+  event happen". Goals fit it well: if a team is expected to score 1.5 goals, the
+  Poisson tells you the chance of 0, 1, 2, 3… goals.
+- **Dixon-Coles model** — a famous 1997 football model. It gives each team an
+  **attack** number and a **defence** number, uses Poisson to turn those into goal
+  counts for both sides, and adds a small correction for low scores (0–0, 1–0, 1–1
+  happen a bit more often than plain Poisson predicts). Output: a probability for
+  every scoreline. "Bivariate Poisson" just means "Poisson for both teams at once".
+- **Elo rating** — the chess rating system. Every team has a single number; after a
+  match the winner takes points from the loser, more if it was an upset. Great for
+  win/draw/loss odds, but it doesn't predict scorelines.
+- **Ensemble / blend** — using two models and mixing their answers, because the
+  average of two decent models is usually better than either alone. Here: `w` parts
+  Dixon-Coles + `(1−w)` parts Elo for the win/draw/loss odds.
+
+**The tuning tricks**
+
+- **Ridge / shrinkage** — pulls each team's strength gently toward the average. Stops
+  the model from over-trusting tiny samples (a minnow that won one freak game doesn't
+  get rated world-class).
+- **Time decay / half-life (~3 years)** — recent matches count more than old ones. A
+  "3-year half-life" means a result from 3 years ago counts half as much as a recent
+  one.
+- **Temperature scaling / calibration** — a final dial that stretches or squashes the
+  probabilities so they're honest. Without it, models tend to sound overconfident
+  (saying 90% when the truth is 75%).
+- **Shin de-vig / overround** — bookmaker odds include the bookie's profit margin
+  ("the vig"), so their implied percentages add up to more than 100%. "De-vigging"
+  removes that margin to recover the fair probabilities; Shin's method is one
+  standard way to do it. Only used with `--odds`.
+- **Confederation effects** — a small adjustment for the fact that every World Cup
+  game is between different continents (UEFA, CONMEBOL, CAF…), whose teams rarely
+  play each other, so their strength numbers need a cross-continent correction.
+
+**The score-keeping metrics** (all "lower = better")
+
+- **Accuracy** — simplest one: how often the most likely outcome actually happened.
+  Ignores *how* confident the model was.
+- **RPS (Ranked Probability Score)** — the football-standard metric. Like Brier but
+  it knows the outcomes are *ordered* (home → draw → away), so predicting a draw when
+  the away team wins is punished less than predicting a home win. Measures how close
+  the probabilities were to reality.
+- **log-loss** — punishes confident wrong calls very harshly (saying 99% for
+  something that didn't happen is almost infinitely bad). Rewards being both right
+  and well-calibrated.
+- **Brier score** — the average squared error between the predicted probability and
+  what happened (1 or 0). Simple and robust.
+- **ECE (Expected Calibration Error)** — measures honesty specifically: of all the
+  times the model said "70%", did it happen ~70% of the time? An ECE of 1.9% means
+  it's off by less than 2 percentage points on average.
+- **Confidence interval (CI) / bootstrap** — a range showing how sure we are of a
+  result given limited data. "CI entirely below zero" means the blend's advantage is
+  real, not luck. "Bootstrap" is the technique used to compute it (re-sampling the
+  matches many times).
+
 ## How good is it? (validation)
 
 Tested **out-of-sample** — i.e. always predicting matches the model had *not*
@@ -165,11 +227,9 @@ standard scores for "how good were the probabilities" (see note below the table)
 | Brier (↓) | **0.505** | 0.507 | 0.530 |
 | ECE — calibration error (↓) | **1.86%** | 2.24% | 6.21% |
 
-> **What those scores mean:** **RPS**, **log-loss** and **Brier** all measure how
-> close the predicted probabilities were to what actually happened (lower = the
-> probabilities were sharper and more honest). **ECE** is the calibration error: a
-> ~1.9% ECE means that when the model says "70%", the real rate is within ~2% of
-> 70%. **Accuracy** is just how often the most likely outcome was correct.
+> All four metrics (RPS, log-loss, Brier, ECE) are explained in
+> [Technical terms](#technical-terms-explained) above. Short version: lower means
+> the probabilities were sharper and more honest.
 
 The blend is **significantly** better than Elo alone (the confidence interval for
 the difference sits entirely below zero). For reference, a public WC2026 model
