@@ -99,6 +99,8 @@ def main(argv=None) -> int:
     pp.add_argument("--odds", action="store_true", help="ancora al mercato (quote bookmaker)")
     pp.add_argument("--card", metavar="FILE.svg", help="esporta una card SVG condivisibile")
     pp.add_argument("--upcoming", action="store_true")
+    pp.add_argument("--until", metavar="YYYY-MM-DD",
+                    help="con --upcoming: includi solo le fixture fino a questa data (inclusa)")
     pp.add_argument("--limit", type=int, default=20)
     pp.add_argument("--refit", action="store_true")
     pp.add_argument("--all", action="store_true", help="con --upcoming: mostra anche date passate")
@@ -168,6 +170,13 @@ def main(argv=None) -> int:
             fut = datamod.future(df).sort_values("date")
             if not args.all:
                 fut = fut[fut["date"] >= pd.Timestamp.today().normalize()]
+            if args.until:
+                try:
+                    until = pd.Timestamp(args.until).normalize()
+                except ValueError:
+                    print(f"--until: data non valida '{args.until}' (usa YYYY-MM-DD)", file=sys.stderr)
+                    return 2
+                fut = fut[fut["date"] <= until]
             shown = 0
             for r in fut.itertuples(index=False):
                 if r.home_team not in pe_.dc.attack or r.away_team not in pe_.dc.attack:
