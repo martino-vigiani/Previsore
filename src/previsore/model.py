@@ -211,10 +211,14 @@ class DixonColes:
         # mercati derivati (gratis, dalla stessa matrice)
         gx = np.arange(M.shape[0])
         totals = np.add.outer(gx, gx)
+        over15 = float(M[totals >= 2].sum())
         over25 = float(M[totals >= 3].sum())
+        over35 = float(M[totals >= 4].sum())
         btts = float(M[1:, 1:].sum())          # entrambe segnano
         markets = {
+            "over15": over15, "under15": 1.0 - over15,
             "over25": over25, "under25": 1.0 - over25,
+            "over35": over35, "under35": 1.0 - over35,
             "btts": btts, "btts_no": 1.0 - btts,
             "clean_home": float(M[:, 0].sum()),   # ospite non segna
             "clean_away": float(M[0, :].sum()),   # casa non segna

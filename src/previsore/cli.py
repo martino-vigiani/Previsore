@@ -104,6 +104,8 @@ def main(argv=None) -> int:
     pp.add_argument("--limit", type=int, default=20)
     pp.add_argument("--refit", action="store_true")
     pp.add_argument("--all", action="store_true", help="con --upcoming: mostra anche date passate")
+    pp.add_argument("--tournament", default="FIFA World Cup 2026",
+                    help="nome torneo mostrato nella card (default: FIFA World Cup 2026)")
 
     pb = sub.add_parser("backtest", help="backtest split singolo")
     pb.add_argument("--cutoff", default="2024-01-01")
@@ -194,7 +196,7 @@ def main(argv=None) -> int:
             print("Serve --home e --away, oppure --upcoming.", file=sys.stderr)
             return 2
         pred = pe_.predict(args.home, args.away, args.neutral)
-        _emit(pe_, pred, goals, tmap, "", "FIFA World Cup 2026", card_path=args.card)
+        _emit(pe_, pred, goals, tmap, "", args.tournament, card_path=args.card)
         return 0
 
     if args.cmd == "backtest":
